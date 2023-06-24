@@ -1,0 +1,186 @@
+---
+title: "Practicum Assignment ANA 515"
+author: "Kevin M Rabidou"
+date: "2023-06-19"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r packages, include = FALSE}
+# Installing potential packages that are going to be used
+library(readxl)
+library(tidyverse)
+library(knitr)
+library(stringr)
+```
+
+```{r excelSheets, include = FALSE}
+# As there are two separate sheets in the excel file, I uploaded the sheets individually then used the merge function to join them into one dataframe. 
+
+
+NFL1 <- read_excel("~/Desktop/ANA 515/Practicum Assignment/NFLtests.xlsx", 
+    sheet = "Sheet1")
+
+NFL2 <- read_excel("~/Desktop/ANA 515/Practicum Assignment/NFLtests.xlsx", 
+    sheet = "Sheet2")
+
+NFLmerged <- merge(NFL1, NFL2, all.x = TRUE, all.y = TRUE)
+```
+
+```{r summaryInfo, include = FALSE}
+# Get a summary of the percentage of NAs for each variable
+missingInfo <- NFLmerged %>%
+  summarize_all(funs(mean(is.na(.))))
+
+str(NFLmerged)
+```
+
+```{r fixingDates, include = FALSE}
+#Changing the date format to a readable version
+NFLmerged$date <- as.Date(NFLmerged$date, origin = "1899-12-30")
+
+#Note: Some dates are before the 2020 season so we want to remove those dates. Create new subset with the proper dates leaving the raw file untouched. As this is 2020 season data, we can start the set in September
+NFLtest1 <- subset(NFLmerged, date >= "2020-09-01")
+
+#Some season values are not 2020 but all dates are correct for the 2020 season so need to change the column to show all 2020. 
+NFLtest1$season <- 2020
+
+#For if a game was a playoff or not, we are going to replace the NA terms with an r for regular season game. 
+NFLtest1$playoff[is.na(NFLtest1$playoff)] <- "r"
+
+```
+
+```{r fixVariableTypes, include = FALSE}
+#Need to convert elo1_pre, elo2_post, qb1_value_pre, qb2_value_pre, and qb1_adj variables to num format...will create NAs as a result. Also need to convert score1 and score 2 to int values
+NFLtest1$elo1_pre <- as.numeric(NFLtest1$elo1_pre)
+NFLtest1$elo2_post <- as.numeric(NFLtest1$elo2_post)
+NFLtest1$qb1_value_pre <- as.numeric(NFLtest1$qb1_value_pre)
+NFLtest1$qb2_value_pre <- as.numeric(NFLtest1$qb2_value_pre)
+NFLtest1$qb1_adj <- as.numeric(NFLtest1$qb1_adj)
+NFLtest1$score1 <- as.integer(NFLtest1$score1)
+NFLtest1$score2 <- as.integer(NFLtest1$score2)
+
+```
+
+# Varible Testing for Outliers
+
+```{r fixDataValues, echo = FALSE}
+#As negative scores are not possible we want to replace them with NAs
+NFLtest1$score1[NFLtest1$score1 < 0] <- NA
+NFLtest1$score2[NFLtest1$score2 < 0] <- NA
+
+#Any probabilities over 1 need to be NAs
+NFLtest1$elo_prob2[NFLtest1$elo_prob2 > 1] <- NA
+NFLtest1$qbelo_prob1[NFLtest1$qbelo_prob1 > 1] <- NA
+
+
+#Need to change team names to match other abbreviations (2 cases that need to be fixed manually)
+NFLtest1$team2 <- str_replace(NFLtest1$team2, "OAKLAND", "OAK")
+NFLtest1$team2 <- str_replace(NFLtest1$team2, "Houston", "HOU")
+
+
+#qb_adj/qbvalue/qbelo/elo value need to be tested for outliers then determine whether to adjust any values to NA
+
+label1 = c("elo1_pre", "elo2_pre", "elo1_post", "elo2_post")
+boxplot(NFLtest1$elo1_pre, NFLtest1$elo2_pre, NFLtest1$elo1_post, NFLtest1$elo2_post, names=label1)
+#Outliers...Adjust to set anything less than 1000 as NA (1,3,4)
+#Outliers...Adjust to set anything greater than 2000 as NA (2)
+NFLtest1$elo1_pre[NFLtest1$elo1_pre < 1000] <- NA
+NFLtest1$elo2_pre[NFLtest1$elo2_pre > 2000] <- NA
+NFLtest1$elo1_post[NFLtest1$elo1_post < 1000] <- NA
+NFLtest1$elo2_post[NFLtest1$elo2_post < 1000] <- NA
+
+label2 = c("qbelo1_pre", "qbelo2_pre", "qbelo1_post", "qbelo2_post")
+boxplot(NFLtest1$qbelo1_pre, NFLtest1$qbelo2_pre, NFLtest1$qbelo1_post, NFLtest1$qbelo2_post, names=label2) 
+#Outliers...Adjust to set anything less than 1000 as NA (1,3)
+NFLtest1$qbelo1_pre[NFLtest1$qbelo1_pre < 1000] <- NA
+NFLtest1$qbelo1_post[NFLtest1$qbelo1_post < 1000] <- NA
+
+label3 = c("qb1_value_pre", "qb2_value_pre", "qb1_value_post", "qb2_value_post")
+boxplot(NFLtest1$qb1_value_pre, NFLtest1$qb2_value_pre, NFLtest1$qb1_value_post, NFLtest1$qb2_value_post, names=label3)
+#Outliers...Adjust anything less than 20 as NA (2,3)
+NFLtest1$qb2_value_pre[NFLtest1$qb2_value_pre < 20] <- NA
+NFLtest1$qb1_value_post[NFLtest1$qb1_value_post < 20] <- NA
+
+label4 = c("qb1_game_value", "qb2_game_value")
+boxplot(NFLtest1$qb1_game_value, NFLtest1$qb2_game_value, names=label4)
+#Outliers...Greater than 500 and less than -135 set aw
+#Outliers...Greater than 600 and less than -200 set as NA (2)
+NFLtest1$qb1_game_value[NFLtest1$qb1_game_value < -135] <- NA
+NFLtest1$qb1_game_value[NFLtest1$qb1_game_value > 500] <- NA
+NFLtest1$qb2_game_value[NFLtest1$qb2_game_value < -180] <- NA
+NFLtest1$qb2_game_value[NFLtest1$qb2_game_value > 600] <- NA
+
+label5 = c("qb1_adj", "qb2_adj" )
+boxplot(NFLtest1$qb1_adj, NFLtest1$qb2_adj, names=label5)
+#Outliers...anything outside [-28,40] to be set as NA
+NFLtest1$qb1_adj[NFLtest1$qb1_adj > 40] <- NA
+NFLtest1$qb1_adj[NFLtest1$qb1_adj < -28] <- NA
+NFLtest1$qb2_adj[NFLtest1$qb2_adj > 40] <- NA
+NFLtest1$qb2_adj[NFLtest1$qb2_adj < -28] <- NA
+```
+
+
+```{r saveMissingTeams, echo = FALSE}
+#For the Team1 and Team2 columns, there are some missing teams, or NAs, so to have a full dataset we need to remove the rows that contain any missing values. There is the potential to match the games from another source and find the teams but for this project we are going to be looking to remove these terms. We want to store the rows in a separate frame to keep record of the data. 
+
+missing_team1 <- subset(NFLtest1, is.na(NFLtest1$team1))
+missing_team2 <- subset(NFLtest1, is.na(NFLtest1$team2))
+
+```
+
+```{r saveMissingElo, echo = FALSE}
+#As above, we are going to save all the missing elo rating terms before removing them form the from the set
+missing_elo1_pre <- subset(NFLtest1, is.na(NFLtest1$elo1_pre))
+missing_elo2_pre <- subset(NFLtest1, is.na(NFLtest1$elo2_pre))
+missing_elo_prob1 <- subset(NFLtest1, is.na(NFLtest1$elo_prob1))
+missing_elo_prob2 <- subset(NFLtest1, is.na(NFLtest1$elo_prob2))
+missing_elo1_post <- subset(NFLtest1, is.na(NFLtest1$elo2_post))
+missing_elo2_post <- subset(NFLtest1, is.na(NFLtest1$elo2_post))
+
+
+```
+
+
+```{r saveMissingQBs, echo = FALSE}
+#Save the NA qbs into seperate frames
+NFLtest2i <- subset(NFLtest1, is.na(NFLtest1$qb1))
+NFLtest2j <- subset(NFLtest1, is.na(NFLtest1$qb2))
+
+
+```
+
+```{r saveMissingQBValue, echo = FALSE}
+#Save all NA value rows for qb values to own file
+missing_qbelo1_pre <- subset(NFLtest1, is.na(NFLtest1$qbelo1_pre))
+missing_qbelo2_pre <- subset(NFLtest1, is.na(NFLtest1$qbelo2_pre))
+missing_qbelo_prob1 <- subset(NFLtest1, is.na(NFLtest1$qbelo_prob1))
+missing_qbelo_prob2 <- subset(NFLtest1, is.na(NFLtest1$qbelo_prob2))
+missing_qbelo1_post <- subset(NFLtest1, is.na(NFLtest1$qbelo1_post))
+missing_qbelo2_post <- subset(NFLtest1, is.na(NFLtest1$qbelo2_post))
+
+missing_qb1_value_pre <- subset(NFLtest1, is.na(NFLtest1$qb1_value_pre))
+missing_qb2_value_pre <- subset(NFLtest1, is.na(NFLtest1$qb2_value_pre))
+missing_qb1_adj <- subset(NFLtest1, is.na(NFLtest1$qb1_adj))
+missing_qb2_adj <- subset(NFLtest1, is.na(NFLtest1$qb2_adj))
+missing_qb1_value_post <- subset(NFLtest1, is.na(NFLtest1$qb1_value_post))
+missing_qb2_value_post <- subset(NFLtest1, is.na(NFLtest1$qb2_value_post))
+missing_qb1_game_value <- subset(NFLtest1, is.na(NFLtest1$qb1_game_value))
+missing_qb2_game_value <- subset(NFLtest1, is.na(NFLtest1$qb2_game_value))
+
+```
+
+```{r saveMissingScores, echo = FALSE}
+#Save the missing scores into own files before removing them from testing file.
+missing_score1 <- subset(NFLtest1, is.na(NFLtest1$score1))
+missing_score2 <- subset(NFLtest1, is.na(NFLtest1$score2))
+
+```
+
+```{r removeAllMissingValues, echo = FALSE}
+noMissingDataNFL <- NFLtest1 %>% drop_na()
+
+```
+
+
